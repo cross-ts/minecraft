@@ -3,11 +3,64 @@ Parameters:
     Type: String
     Default: MinecraftServer
 
+  Ipv4Cidr:
+    Type: String
+    Description: First and Second octet of VPC.
+    # e.g.) xxx.xxx (192.168 / 172.16-31 / 10.0-255)
+    Default: 192.168
+
+Mappings:
+  CidrBlocks:
+    Vpc:
+      Ipv4Cidr: .0.0/16
+    Subnet1:
+      Ipv4Cidr: .0.0/24
+    Subnet2:
+      Ipv4Cidr: .1.0/24
+
 Resources:
   VPC:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: 192.168.0.0/26
+      CidrBlock:
+        Fn::Sub:
+          - ${Ipv4Cidr}${Block}
+          - Block: !FindInMap [CidrBlocks, Vpc, Ipv4Cidr]
+      EnableDnsHostnames: false
+      EnableDnsSupport: true
+      InstanceTenancy: default
       Tags:
         - Key: Name
           Value: !Ref EnvironmentName
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, {Fn::GetAZs: !Ref AWS::Region}]
+      CidrBlock:
+        Fn::Sub:
+          - ${Ipv4Cidr}${Block}
+          - Block: !FindInMap [CidrBlocks, Subnet1, Ipv4Cidr]
+      # AssignIpv6AddressOnCreation: false
+      # Ipv6CidrBlock:
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub PublicSunet1 for ${EnvironmentName}
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, {Fn::GetAZs: !Ref AWS::Region}]
+      CidrBlock:
+        Fn::Sub:
+          - ${Ipv4Cidr}${Block}
+          - Block: !FindInMap [CidrBlocks, Subnet2, Ipv4Cidr]
+      # AssignIpv6AddressOnCreation: false
+      # Ipv6CidrBlock:
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub PublicSunet2 for ${EnvironmentName}
