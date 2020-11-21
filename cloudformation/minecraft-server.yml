@@ -21,6 +21,7 @@ Mappings:
       Ipv6Cidr: 01::/64
 
 Resources:
+  # VPC
   VPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -41,6 +42,48 @@ Resources:
       VpcId: !Ref VPC
       AmazonProvidedIpv6CidrBlock: true
 
+  # Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  AttachIntenetGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Route/RouteTable
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  RouteV4:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - AttachIntenetGateway
+    Properties:
+      RouteTableId: !Ref RouteTable
+      GatewayId: !Ref InternetGateway
+      DestinationCidrBlock: 0.0.0.0/0
+
+  RouteV6:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - AttachIntenetGateway
+    Properties:
+      RouteTableId: !Ref RouteTable
+      GatewayId: !Ref InternetGateway
+      DestinationIpv6CidrBlock: ::/0
+
+  # Subnet
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     DependsOn:
@@ -62,6 +105,12 @@ Resources:
         - Key: Name
           Value: !Sub PublicSunet1 for ${EnvironmentName}
 
+  AssociatePublicSubnet1WithRouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref PublicSubnet1
+
   PublicSubnet2:
     Type: AWS::EC2::Subnet
     DependsOn:
@@ -82,3 +131,9 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub PublicSunet2 for ${EnvironmentName}
+
+  AssociatePublicSubnet2WithRouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref PublicSubnet2
