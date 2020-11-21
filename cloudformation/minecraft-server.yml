@@ -9,6 +9,12 @@ Parameters:
     # e.g.) xxx.xxx (192.168 / 172.16-31 / 10.0-255)
     Default: 192.168
 
+  AllowSSHIpv4Range:
+    Type: String
+
+  AllowSSHIpv6Range:
+    Type: String
+
 Mappings:
   CidrBlocks:
     Vpc:
@@ -91,19 +97,23 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       AvailabilityZone: !Select [0, {Fn::GetAZs: !Ref AWS::Region}]
+      MapPublicIpOnLaunch: true
       CidrBlock:
         Fn::Sub:
           - ${Ipv4Cidr}${Block}
           - Block: !FindInMap [CidrBlocks, Subnet1, Ipv4Cidr]
+      # AssignIpv6AddressOnCreation: true
+      # NOTE:
+      #   * In CFn, Both MapPublicIpOnLaunch and AssignIpv6AddressOnCreation can't be enabled.
+      #   * However, that's possible in AWS Management console.
       Ipv6CidrBlock:
         Fn::Sub:
           - ${Ipv6Cidr}${Block}
           - Ipv6Cidr: !Select [0, !Split ['00::/', !Select [0, !GetAtt VPC.Ipv6CidrBlocks]]]
             Block: !FindInMap [CidrBlocks, Subnet1, Ipv6Cidr]
-      MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: !Sub PublicSunet1 for ${EnvironmentName}
+          Value: !Sub PublicSubnet1 for ${EnvironmentName}
 
   AssociatePublicSubnet1WithRouteTable:
     Type: AWS::EC2::SubnetRouteTableAssociation
@@ -118,22 +128,67 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       AvailabilityZone: !Select [1, {Fn::GetAZs: !Ref AWS::Region}]
+      MapPublicIpOnLaunch: true
       CidrBlock:
         Fn::Sub:
           - ${Ipv4Cidr}${Block}
           - Block: !FindInMap [CidrBlocks, Subnet2, Ipv4Cidr]
+      # NOTE:
+      #   * In CFn, Both MapPublicIpOnLaunch and AssignIpv6AddressOnCreation can't be enabled.
+      #   * However, that's possible in AWS Management console.
+      # AssignIpv6AddressOnCreation: true
       Ipv6CidrBlock:
         Fn::Sub:
           - ${Ipv6Cidr}${Block}
           - Ipv6Cidr: !Select [0, !Split ['00::/', !Select [0, !GetAtt VPC.Ipv6CidrBlocks]]]
             Block: !FindInMap [CidrBlocks, Subnet2, Ipv6Cidr]
-      MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: !Sub PublicSunet2 for ${EnvironmentName}
+          Value: !Sub PublicSubnet2 for ${EnvironmentName}
 
   AssociatePublicSubnet2WithRouteTable:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       RouteTableId: !Ref RouteTable
       SubnetId: !Ref PublicSubnet2
+
+  # SecurityGroup
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub SecurityGroup for ${EnvironmentName}
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 25565
+          ToPort: 25565
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 25565
+          ToPort: 25565
+          CidrIpv6: ::/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowSSHIpv4Range
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIpv6: !Ref AllowSSHIpv6Range
+      Tags:
+        - Key: Name
+          Value: !Sub SecurityGroup for ${EnvironmentName}
+
+  # EC2
+  MinecraftServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0ede32f8db20757b3
+      InstanceType: t4g.micro
+      SubnetId: !Ref PublicSubnet1
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      KeyName: cross
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
