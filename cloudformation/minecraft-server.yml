@@ -192,3 +192,37 @@ Resources:
       Tags:
         - Key: Name
           Value: !Ref EnvironmentName
+
+  # NLB
+  NLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: network
+      IpAddressType: dualstack
+      Name: !Ref EnvironmentName
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      TargetType: instance
+      Name: !Ref EnvironmentName
+      VpcId: !Ref VPC
+      Protocol: TCP
+      Port: 25565
+      Targets:
+        - Id: !Ref MinecraftServer
+          Port: 25565
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref NLB
+      Protocol: TCP
+      Port: 25565
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
