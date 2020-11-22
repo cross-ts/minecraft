@@ -1,0 +1,50 @@
+- hosts: all
+  remote_user: ec2-user
+  become: true
+
+  tasks:
+    - name: Create user.
+      user:
+        name: minecraft
+
+    - name: Install corretto.
+      yum:
+        name: java-11-amazon-corretto-headless
+        state: latest
+
+    - name: Create server dir.
+      file:
+        path: /home/minecraft/server
+        state: directory
+        owner: minecraft
+        group: minecraft
+        mode: 0755
+
+    - name: Install minecraft server.jar.
+      get_url:
+        url: https://launcher.mojang.com/v1/objects/35139deedbd5182953cf1caa23835da59ca3d7cd/server.jar
+        dest: /home/minecraft/server/server.jar
+        owner: minecraft
+        group: minecraft
+
+    - name: Agree to the eula.
+      template:
+        src: eula.txt
+        dest: /home/minecraft/server/eula.txt
+        mode: 0644
+        owner: minecraft
+        group: minecraft
+
+    - name: Create Unit file.
+      template:
+        src: minecraft.service
+        dest: /lib/systemd/system/minecraft.service
+        mode: 0644
+        owner: minecraft
+        group: minecraft
+
+    - name: Start minecraft service.
+      systemd:
+        state: restarted
+        daemon_reload: yes
+        name: minecraft
