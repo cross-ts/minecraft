@@ -3,6 +3,11 @@
   become: true
 
   tasks:
+    - name: Update packages.
+      yum:
+        name: *
+        state: latest
+
     - name: Create user.
       user:
         name: minecraft
