@@ -5,7 +5,7 @@
   tasks:
     - name: Update packages.
       yum:
-        name: *
+        name: '*'
         state: latest
 
     - name: Create user.
