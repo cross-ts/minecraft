@@ -235,3 +235,113 @@ Resources:
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref TargetGroup
+
+  # Ansible SSM
+  ExecuteAnsibleLambdaIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}AnsibleLambdaIAMRole
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AmazonSSMMaintenanceWindowRole
+        - arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess
+      Policies:
+        - PolicyName: !Sub ${EnvironmentName}SSMWait
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetCommandInvocation'
+                Resource:
+                  - '*'
+
+  AnsibleApplier:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${EnvironmentName}AnsibleApplier
+      Role: !GetAtt ExecuteAnsibleLambdaIAMRole.Arn
+      Handler: index.handler
+      Runtime: python3.7
+      Timeout: 60
+      Code:
+        ZipFile: !Sub |
+          import boto3
+          import time
+          import json
+          import cfnresponse
+          ec2 = boto3.client('ec2')
+          ssm = boto3.client('ssm')
+
+          def apply_ansible(event, context):
+              # ssm-agentが起動していなくてSSMがコケるのを避ける
+              time.sleep(30)
+              instance_id = ''
+              while instance_id == '':
+                  response = ec2.describe_instances(
+                    Filters=[
+                        {
+                            'Name': 'instance-state-name',
+                            'Values': ['running']
+                        },
+                        {
+                            'Name': 'tag:Name',
+                            'Values': ['${EnvironmentName}']
+                        }
+                    ]
+                  )
+                  reservations = response['Reservations']
+                  if reservations == []:
+                      time.sleep(3)
+                      continue
+                  instance_id = reservations[0]['Instances'][0]['InstanceId']
+                  break
+
+              command = ssm.send_command(
+                  InstanceIds=[instance_id],
+                  DocumentName='AWS-UpdateSSMAgent',
+              )
+              SourceInfo = json.dumps({
+                  "owner": "cross-ts",
+                  "repository": "minecraft",
+                  "path": "ansible",
+                  "getOptions": "branch:develop"
+              })
+              command = ssm.send_command(
+                  InstanceIds=[instance_id],
+                  DocumentName='AWS-ApplyAnsiblePlaybooks',
+                  Parameters={
+                      "SourceType": ["GitHub"],
+                      "SourceInfo": [SourceInfo],
+                      "InstallDependencies": ["True"],
+                      "PlaybookFile": ["playbook.yml"],
+                      "ExtraVariables": ["SSM=True"],
+                      "Check":["False"],
+                      "Verbose":["-v"]
+                  }
+              )
+
+          def handler(event, context):
+              try:
+                  if event['RequestType'] != 'Create':
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "ApplyAnsiblePlaybooks")
+                      return
+                  apply_ansible(event, context)
+              except Exception as e:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, "ApplyAnsiblePlaybooks")
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "ApplyAnsiblePlaybooks")
+
+  ExecuteAnsibleApply:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn:
+      - MinecraftServer
+    Properties:
+      ServiceToken: !GetAtt AnsibleApplier.Arn
