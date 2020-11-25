@@ -188,19 +188,32 @@ Resources:
       Roles:
         - !Ref SSMIAMRole
 
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Ref EnvironmentName
+      LaunchTemplateData:
+        IamInstanceProfile:
+          Arn: !GetAtt IamInstanceProfile.Arn
+        ImageId: ami-0ede32f8db20757b3
+        ImageId: ami-0ede32f8db20757b3
+        InstanceType: t4g.micro
+        KeyName: cross
+        SecurityGroupIds:
+          - !Ref SecurityGroup
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Ref EnvironmentName
+
   MinecraftServer:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: ami-0ede32f8db20757b3
-      InstanceType: t4g.micro
       SubnetId: !Ref PublicSubnet1
-      SecurityGroupIds:
-        - !Ref SecurityGroup
-      KeyName: cross
-      IamInstanceProfile: !Ref IamInstanceProfile
-      Tags:
-        - Key: Name
-          Value: !Ref EnvironmentName
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
 
   # NLB
   NLB:
