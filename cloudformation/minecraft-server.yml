@@ -201,6 +201,11 @@ Resources:
         KeyName: cross
         SecurityGroupIds:
           - !Ref SecurityGroup
+        InstanceMarketOptions:
+          MarketType: spot
+          SpotOptions:
+            SpotInstanceType: one-time
+            InstanceInterruptionBehavior: terminate
         TagSpecifications:
           - ResourceType: instance
             Tags:
