@@ -169,7 +169,7 @@ Resources:
   SSMIAMRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub ${EnvironmentName}SSMRole
+      RoleName: !Sub ${EnvironmentName}
       AssumeRolePolicyDocument:
         Statement:
           - Effect: Allow
@@ -178,6 +178,15 @@ Resources:
                 - ec2.amazonaws.com
             Action:
               - sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub ${EnvironmentName}Policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cloudformation:Describe*'
+                Resource: '*'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
 
@@ -195,7 +204,6 @@ Resources:
       LaunchTemplateData:
         IamInstanceProfile:
           Arn: !GetAtt IamInstanceProfile.Arn
-        ImageId: ami-0ede32f8db20757b3
         ImageId: ami-0ede32f8db20757b3
         InstanceType: t4g.micro
         KeyName: cross
@@ -370,3 +378,15 @@ Resources:
       - AnsibleApplierLogGroup
     Properties:
       ServiceToken: !GetAtt AnsibleApplier.Arn
+
+  SaveDataS3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub minecraft-savedata-${AWS::AccountId}
+
+Outputs:
+  MinecraftSaveDataBucketName:
+    Value: !Ref SaveDataS3Bucket
+    Export:
+      Name: MinecraftSaveDataBucketName
