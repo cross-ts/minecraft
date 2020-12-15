@@ -376,6 +376,7 @@ Resources:
     DependsOn:
       - MinecraftServer
       - AnsibleApplierLogGroup
+      - SaveDataS3Bucket
     Properties:
       ServiceToken: !GetAtt AnsibleApplier.Arn
 
