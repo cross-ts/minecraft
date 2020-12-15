@@ -17,6 +17,11 @@
         name: java-11-amazon-corretto-headless
         state: latest
 
+    - name: Install tmux.
+      yum:
+        name: tmux
+        state: latest
+
     - name: Create server dir.
       file:
         path: /home/minecraft/server
