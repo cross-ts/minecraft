@@ -22,6 +22,11 @@
         name: tmux
         state: latest
 
+    - name: Install jq.
+      yum:
+        name: jq
+        state: latest
+
     - name: Create server dir.
       file:
         path: /home/minecraft/server
@@ -29,6 +34,25 @@
         owner: minecraft
         group: minecraft
         mode: 0755
+
+    - name: Deploy initialize script.
+      template:
+        src: deploy-from-s3
+        dest: /usr/local/bin/deploy-from-s3
+        mode: 0755
+        owner: minecraft
+        group: minecraft
+
+    - name: Deploy backup script.
+      template:
+        src: backup-to-s3
+        dest: /usr/local/bin/backup-to-s3
+        mode: 0755
+        owner: minecraft
+        group: minecraft
+
+    - name: Execute initialize.
+      shell: /usr/local/bin/deploy-from-s3
 
     - name: Install minecraft server.jar.
       get_url:
