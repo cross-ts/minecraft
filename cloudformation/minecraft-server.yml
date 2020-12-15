@@ -357,9 +357,16 @@ Resources:
                   cfnresponse.send(event, context, cfnresponse.FAILED, {}, "ApplyAnsiblePlaybooks")
               cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "ApplyAnsiblePlaybooks")
 
+  AnsibleApplierLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AnsibleApplier}
+      RetentionInDays: 1
+
   ExecuteAnsibleApply:
     Type: AWS::CloudFormation::CustomResource
     DependsOn:
       - MinecraftServer
+      - AnsibleApplierLogGroup
     Properties:
       ServiceToken: !GetAtt AnsibleApplier.Arn
