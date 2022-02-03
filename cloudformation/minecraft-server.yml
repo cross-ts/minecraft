@@ -1,0 +1,393 @@
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: MinecraftServer
+
+  Ipv4Cidr:
+    Type: String
+    Description: First and Second octet of VPC.
+    # e.g.) xxx.xxx (192.168 / 172.16-31 / 10.0-255)
+    Default: 192.168
+
+Mappings:
+  CidrBlocks:
+    Vpc:
+      Ipv4Cidr: .0.0/16
+    Subnet1:
+      Ipv4Cidr: .0.0/24
+      Ipv6Cidr: 00::/64
+    Subnet2:
+      Ipv4Cidr: .1.0/24
+      Ipv6Cidr: 01::/64
+
+Resources:
+  # VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock:
+        Fn::Sub:
+          - ${Ipv4Cidr}${Block}
+          - Block: !FindInMap [CidrBlocks, Vpc, Ipv4Cidr]
+      EnableDnsHostnames: false
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  Ipv6VPCCidrBlock:
+    Type: AWS::EC2::VPCCidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      AmazonProvidedIpv6CidrBlock: true
+
+  # Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  AttachIntenetGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Route/RouteTable
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+
+  RouteV4:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - AttachIntenetGateway
+    Properties:
+      RouteTableId: !Ref RouteTable
+      GatewayId: !Ref InternetGateway
+      DestinationCidrBlock: 0.0.0.0/0
+
+  RouteV6:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - AttachIntenetGateway
+    Properties:
+      RouteTableId: !Ref RouteTable
+      GatewayId: !Ref InternetGateway
+      DestinationIpv6CidrBlock: ::/0
+
+  # Subnet
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    DependsOn:
+      - Ipv6VPCCidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, {Fn::GetAZs: !Ref AWS::Region}]
+      MapPublicIpOnLaunch: true
+      CidrBlock:
+        Fn::Sub:
+          - ${Ipv4Cidr}${Block}
+          - Block: !FindInMap [CidrBlocks, Subnet1, Ipv4Cidr]
+      # NOTE:
+      #   * In CFn, Both MapPublicIpOnLaunch and AssignIpv6AddressOnCreation can't be enabled.
+      #   * However, that's possible in AWS Management console.
+      # AssignIpv6AddressOnCreation: true
+      Ipv6CidrBlock:
+        Fn::Sub:
+          - ${Ipv6Cidr}${Block}
+          - Ipv6Cidr: !Select [0, !Split ['00::/', !Select [0, !GetAtt VPC.Ipv6CidrBlocks]]]
+            Block: !FindInMap [CidrBlocks, Subnet1, Ipv6Cidr]
+      Tags:
+        - Key: Name
+          Value: !Sub PublicSubnet1 for ${EnvironmentName}
+
+  AssociatePublicSubnet1WithRouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    DependsOn:
+      - Ipv6VPCCidrBlock
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, {Fn::GetAZs: !Ref AWS::Region}]
+      MapPublicIpOnLaunch: true
+      CidrBlock:
+        Fn::Sub:
+          - ${Ipv4Cidr}${Block}
+          - Block: !FindInMap [CidrBlocks, Subnet2, Ipv4Cidr]
+      # NOTE:
+      #   * In CFn, Both MapPublicIpOnLaunch and AssignIpv6AddressOnCreation can't be enabled.
+      #   * However, that's possible in AWS Management console.
+      # AssignIpv6AddressOnCreation: true
+      Ipv6CidrBlock:
+        Fn::Sub:
+          - ${Ipv6Cidr}${Block}
+          - Ipv6Cidr: !Select [0, !Split ['00::/', !Select [0, !GetAtt VPC.Ipv6CidrBlocks]]]
+            Block: !FindInMap [CidrBlocks, Subnet2, Ipv6Cidr]
+      Tags:
+        - Key: Name
+          Value: !Sub PublicSubnet2 for ${EnvironmentName}
+
+  AssociatePublicSubnet2WithRouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  # SecurityGroup
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub SecurityGroup for ${EnvironmentName}
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 25565
+          ToPort: 25565
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 25565
+          ToPort: 25565
+          CidrIpv6: ::/0
+      Tags:
+        - Key: Name
+          Value: !Sub SecurityGroup for ${EnvironmentName}
+
+  # EC2
+  SSMIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub ${EnvironmentName}Policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cloudformation:Describe*'
+                Resource: '*'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+
+  IamInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Ref EnvironmentName
+      Roles:
+        - !Ref SSMIAMRole
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Ref EnvironmentName
+      LaunchTemplateData:
+        IamInstanceProfile:
+          Arn: !GetAtt IamInstanceProfile.Arn
+        ImageId: ami-0ede32f8db20757b3
+        InstanceType: t4g.micro
+        KeyName: cross
+        SecurityGroupIds:
+          - !Ref SecurityGroup
+        InstanceMarketOptions:
+          MarketType: spot
+          SpotOptions:
+            SpotInstanceType: one-time
+            InstanceInterruptionBehavior: terminate
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Ref EnvironmentName
+
+  MinecraftServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+
+  # NLB
+  NLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: network
+      IpAddressType: dualstack
+      Name: !Ref EnvironmentName
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      TargetType: instance
+      Name: !Ref EnvironmentName
+      VpcId: !Ref VPC
+      Protocol: TCP
+      Port: 25565
+      Targets:
+        - Id: !Ref MinecraftServer
+          Port: 25565
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref NLB
+      Protocol: TCP
+      Port: 25565
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  # Ansible SSM
+  ExecuteAnsibleLambdaIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}AnsibleLambdaIAMRole
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AmazonSSMMaintenanceWindowRole
+        - arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess
+      Policies:
+        - PolicyName: !Sub ${EnvironmentName}SSMWait
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetCommandInvocation'
+                Resource:
+                  - '*'
+
+  AnsibleApplier:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${EnvironmentName}AnsibleApplier
+      Role: !GetAtt ExecuteAnsibleLambdaIAMRole.Arn
+      Handler: index.handler
+      Runtime: python3.7
+      Timeout: 60
+      Code:
+        ZipFile: !Sub |
+          import boto3
+          import time
+          import json
+          import cfnresponse
+          ec2 = boto3.client('ec2')
+          ssm = boto3.client('ssm')
+
+          def apply_ansible(event, context):
+              # ssm-agentが起動していなくてSSMがコケるのを避ける
+              time.sleep(30)
+              instance_id = ''
+              while instance_id == '':
+                  response = ec2.describe_instances(
+                    Filters=[
+                        {
+                            'Name': 'instance-state-name',
+                            'Values': ['running']
+                        },
+                        {
+                            'Name': 'tag:Name',
+                            'Values': ['${EnvironmentName}']
+                        }
+                    ]
+                  )
+                  reservations = response['Reservations']
+                  if reservations == []:
+                      time.sleep(3)
+                      continue
+                  instance_id = reservations[0]['Instances'][0]['InstanceId']
+                  break
+
+              command = ssm.send_command(
+                  InstanceIds=[instance_id],
+                  DocumentName='AWS-UpdateSSMAgent',
+              )
+              SourceInfo = json.dumps({
+                  "owner": "cross-ts",
+                  "repository": "minecraft",
+                  "path": "ansible",
+                  "getOptions": "branch:develop"
+              })
+              command = ssm.send_command(
+                  InstanceIds=[instance_id],
+                  DocumentName='AWS-ApplyAnsiblePlaybooks',
+                  Parameters={
+                      "SourceType": ["GitHub"],
+                      "SourceInfo": [SourceInfo],
+                      "InstallDependencies": ["True"],
+                      "PlaybookFile": ["playbook.yml"],
+                      "ExtraVariables": ["SSM=True"],
+                      "Check":["False"],
+                      "Verbose":["-v"]
+                  }
+              )
+
+          def handler(event, context):
+              try:
+                  if event['RequestType'] != 'Create':
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "ApplyAnsiblePlaybooks")
+                      return
+                  apply_ansible(event, context)
+              except Exception as e:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, "ApplyAnsiblePlaybooks")
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "ApplyAnsiblePlaybooks")
+
+  AnsibleApplierLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AnsibleApplier}
+      RetentionInDays: 1
+
+  ExecuteAnsibleApply:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn:
+      - MinecraftServer
+      - AnsibleApplierLogGroup
+      - SaveDataS3Bucket
+    Properties:
+      ServiceToken: !GetAtt AnsibleApplier.Arn
+
+  SaveDataS3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub minecraft-savedata-${AWS::AccountId}
+
+Outputs:
+  MinecraftSaveDataBucketName:
+    Value: !Ref SaveDataS3Bucket
+    Export:
+      Name: MinecraftSaveDataBucketName

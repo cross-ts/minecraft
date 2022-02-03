@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+cd /home/minecraft/server
+
+AWS_METADATA_API='http://169.254.169.254/latest/dynamic/instance-identity/document'
+export AWS_DEFAULT_REGION=$(curl -s ${AWS_METADATA_API} | jq -r .region)
+S3_BUCKET=$(aws cloudformation describe-stacks --query 'Stacks[].Outputs[?ExportName==`MinecraftSaveDataBucketName`].OutputValue' --output text)
+
+aws s3 sync --exact-timestamps s3://${S3_BUCKET} .
